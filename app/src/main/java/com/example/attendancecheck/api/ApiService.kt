@@ -2,6 +2,8 @@ package com.example.attendancecheck.api
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 
 interface ApiService {
@@ -10,6 +12,9 @@ interface ApiService {
 
     @POST("api/register")
     suspend fun register(@Body registerRequest: RegisterRequest): Response<RegisterResponse>
+
+    @GET("api/courses")
+    suspend fun getCourses(@Header("Authorization") token: String): Response<CoursesResponse>
 }
 
 data class LoginRequest(
@@ -39,4 +44,15 @@ data class User(
     val name: String,
     val university_id: String,
     val role: String
+)
+
+data class Course(
+    val course_id: Int,
+    val course_code: String,
+    val course_name: String,
+    val lecturer_id: Int
+)
+
+data class CoursesResponse(
+    val courses: List<Course>
 ) 

@@ -55,10 +55,21 @@ class LoginActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val loginResponse = response.body()
                     if (loginResponse != null) {
-                        // Save token and user info to SharedPreferences or your preferred storage
-                        // For now, we'll just show a success message
-                        Toast.makeText(this@LoginActivity, "Login successful!", Toast.LENGTH_SHORT).show()
-                        // TODO: Navigate to main activity
+                        // Save token and user info to SharedPreferences
+                        val sharedPrefs = getSharedPreferences("AttendanceCheck", MODE_PRIVATE)
+                        sharedPrefs.edit()
+                            .putString("token", loginResponse.token)
+                            .putString("user_role", loginResponse.user.role)
+                            .apply()
+
+                        // Navigate to appropriate dashboard based on role
+                        val intent = when (loginResponse.user.role) {
+                            "student" -> Intent(this@LoginActivity, StudentDashboardActivity::class.java)
+                            "lecturer" -> Intent(this@LoginActivity, LecturerDashboardActivity::class.java)
+                            else -> throw IllegalStateException("Invalid user role")
+                        }
+                        startActivity(intent)
+                        finish()
                     }
                 } else {
                     Toast.makeText(this@LoginActivity, "Login failed: ${response.message()}", Toast.LENGTH_SHORT).show()
