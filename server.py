@@ -167,11 +167,19 @@ def get_courses(current_user):
     cursor = conn.cursor(dictionary=True)
     try:
         if current_user['role'] == 'lecturer':
-            # For lecturers, get their courses with student counts
+            # For lecturers, get their courses with student counts and active QR codes
             cursor.execute(
                 """
                 SELECT c.*, u.name as lecturer_name,
-                       (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.course_id) as student_count
+                       (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.course_id) as student_count,
+                       (SELECT COUNT(*) > 0 FROM qr_codes qr 
+                        JOIN lectures l ON qr.lecture_id = l.lecture_id 
+                        WHERE l.course_id = c.course_id AND qr.expires_at > NOW()) as has_active_qr,
+                       (SELECT TIMESTAMPDIFF(SECOND, NOW(), qr.expires_at) 
+                        FROM qr_codes qr 
+                        JOIN lectures l ON qr.lecture_id = l.lecture_id 
+                        WHERE l.course_id = c.course_id AND qr.expires_at > NOW() 
+                        ORDER BY qr.expires_at DESC LIMIT 1) as qr_remaining_seconds
                 FROM courses c
                 JOIN users u ON c.lecturer_id = u.user_id
                 WHERE c.lecturer_id = %s
@@ -179,10 +187,18 @@ def get_courses(current_user):
                 (current_user['user_id'],)
             )
         else:  # student
-            # For students, get their enrolled courses with lecturer names
+            # For students, get their enrolled courses with lecturer names and active QR codes
             cursor.execute(
                 """
-                SELECT c.*, u.name as lecturer_name
+                SELECT c.*, u.name as lecturer_name,
+                       (SELECT COUNT(*) > 0 FROM qr_codes qr 
+                        JOIN lectures l ON qr.lecture_id = l.lecture_id 
+                        WHERE l.course_id = c.course_id AND qr.expires_at > NOW()) as has_active_qr,
+                       (SELECT TIMESTAMPDIFF(SECOND, NOW(), qr.expires_at) 
+                        FROM qr_codes qr 
+                        JOIN lectures l ON qr.lecture_id = l.lecture_id 
+                        WHERE l.course_id = c.course_id AND qr.expires_at > NOW() 
+                        ORDER BY qr.expires_at DESC LIMIT 1) as qr_remaining_seconds
                 FROM courses c
                 JOIN enrollments e ON c.course_id = e.course_id
                 JOIN users u ON c.lecturer_id = u.user_id
@@ -211,10 +227,18 @@ def get_all_courses(current_user):
     
     cursor = conn.cursor(dictionary=True)
     try:
-        # Get all courses except those the student is already enrolled in
+        # Get all courses except those the student is already enrolled in, including active QR codes
         cursor.execute(
             """
-            SELECT c.*, u.name as lecturer_name 
+            SELECT c.*, u.name as lecturer_name,
+                   (SELECT COUNT(*) > 0 FROM qr_codes qr 
+                    JOIN lectures l ON qr.lecture_id = l.lecture_id 
+                    WHERE l.course_id = c.course_id AND qr.expires_at > NOW()) as has_active_qr,
+                   (SELECT TIMESTAMPDIFF(SECOND, NOW(), qr.expires_at) 
+                    FROM qr_codes qr 
+                    JOIN lectures l ON qr.lecture_id = l.lecture_id 
+                    WHERE l.course_id = c.course_id AND qr.expires_at > NOW() 
+                    ORDER BY qr.expires_at DESC LIMIT 1) as qr_remaining_seconds
             FROM courses c 
             JOIN users u ON c.lecturer_id = u.user_id 
             WHERE c.course_id NOT IN (
@@ -397,14 +421,16 @@ def get_lectures(current_user, course_id):
         conn.close()
 
 # QR Code APIs
-@app.route('/api/lectures/<int:lecture_id>/qrcode', methods=['POST'])
+@app.route('/api/courses/<int:course_id>/qrcode', methods=['POST'])
 @token_required
-def generate_qr_code(current_user, lecture_id):
+def generate_course_qr(current_user, course_id):
     if current_user['role'] != 'lecturer':
         return jsonify({"error": "Only lecturers can generate QR codes"}), 403
     
     data = request.get_json()
     expiry_minutes = data.get('expiry_minutes', 15)  # Default to 15 minutes
+    
+    print(f"Generating QR code for course {course_id} with {expiry_minutes} minutes validity")
     
     conn = get_db_connection()
     if not conn:
@@ -412,17 +438,33 @@ def generate_qr_code(current_user, lecture_id):
     
     cursor = conn.cursor(dictionary=True)
     try:
-        # Verify the lecturer owns this lecture
+        # Verify the lecturer owns this course
         cursor.execute(
-            "SELECT l.* FROM lectures l JOIN courses c ON l.course_id = c.course_id WHERE l.lecture_id = %s AND c.lecturer_id = %s",
-            (lecture_id, current_user['user_id'])
+            "SELECT * FROM courses WHERE course_id = %s AND lecturer_id = %s",
+            (course_id, current_user['user_id'])
         )
-        lecture = cursor.fetchone()
-        if not lecture:
-            return jsonify({"error": "Lecture not found or you don't have permission"}), 404
+        if not cursor.fetchone():
+            return jsonify({"error": "Course not found or you don't have permission"}), 404
+        
+        # Create a lecture for today
+        today = datetime.datetime.now().date()
+        current_time = datetime.datetime.now().time()
+        end_time = (datetime.datetime.now() + datetime.timedelta(minutes=expiry_minutes)).time()
+        
+        print(f"Creating lecture for today {today} from {current_time} to {end_time}")
+        
+        cursor.execute(
+            "INSERT INTO lectures (course_id, date, start_time, end_time) VALUES (%s, %s, %s, %s)",
+            (course_id, today, current_time, end_time)
+        )
+        conn.commit()
+        lecture_id = cursor.lastrowid
+        
+        print(f"Created lecture with ID: {lecture_id}")
         
         # Generate a unique token
         token = str(uuid.uuid4())
+        print(f"Generated token: {token}")
         
         # Calculate expiry time
         expires_at = datetime.datetime.now() + datetime.timedelta(minutes=expiry_minutes)
@@ -435,30 +477,48 @@ def generate_qr_code(current_user, lecture_id):
         conn.commit()
         qr_id = cursor.lastrowid
         
-        # Generate QR code
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(token)
-        qr.make(fit=True)
+        print(f"Saved QR code info with ID: {qr_id}")
         
-        img = qr.make_image(fill_color="black", back_color="white")
-        buffered = BytesIO()
-        img.save(buffered)
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        
-        return jsonify({
-            "qr_id": qr_id,
-            "token": token,
-            "expires_at": expires_at.isoformat(),
-            "qr_image": f"data:image/png;base64,{img_str}"
-        }), 200
+        try:
+            # Generate QR code
+            print("Starting QR code generation...")
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(token)
+            qr.make(fit=True)
+            
+            print("QR code generated, creating image...")
+            img = qr.make_image(fill_color="black", back_color="white")
+            buffered = BytesIO()
+            img.save(buffered)
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            print("QR code image created successfully")
+            
+            # Calculate remaining time in seconds
+            remaining_seconds = int((expires_at - datetime.datetime.now()).total_seconds())
+            
+            return jsonify({
+                "qr_id": qr_id,
+                "token": token,
+                "expires_at": expires_at.isoformat(),
+                "remaining_seconds": remaining_seconds,
+                "qr_image": f"data:image/png;base64,{img_str}"
+            }), 200
+        except Exception as e:
+            print(f"Error during QR code generation: {str(e)}")
+            raise
     except Error as e:
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        print(f"Database error: {str(e)}")  # Log the error
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+    except Exception as e:
+        conn.rollback()
+        print(f"Unexpected error: {str(e)}")  # Log the error
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
     finally:
         cursor.close()
         conn.close()

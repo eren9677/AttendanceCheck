@@ -38,6 +38,26 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("course_id") courseId: Int
     ): Response<Any>
+
+    @POST("api/lectures")
+    suspend fun createLecture(
+        @Header("Authorization") token: String,
+        @Body lectureData: Map<String, Any>
+    ): Response<LectureResponse>
+
+    @POST("api/lectures/{lecture_id}/qrcode")
+    suspend fun generateQRCode(
+        @Header("Authorization") token: String,
+        @Path("lecture_id") lectureId: Int,
+        @Body qrData: Map<String, Int>
+    ): Response<QRCodeResponse>
+
+    @POST("api/courses/{courseId}/qrcode")
+    suspend fun generateQRCode(
+        @Header("Authorization") token: String,
+        @Path("courseId") courseId: Int,
+        @Body request: QRCodeRequest
+    ): Response<QRCodeResponse>
 }
 
 data class LoginRequest(
@@ -71,4 +91,21 @@ data class User(
 
 data class CoursesResponse(
     val courses: List<Course>
+)
+
+data class LectureResponse(
+    val message: String,
+    val lecture_id: Int
+)
+
+data class QRCodeRequest(
+    val expiry_minutes: Int = 15
+)
+
+data class QRCodeResponse(
+    val qr_id: Int,
+    val token: String,
+    val expires_at: String,
+    val remaining_seconds: Int,
+    val qr_image: String
 ) 

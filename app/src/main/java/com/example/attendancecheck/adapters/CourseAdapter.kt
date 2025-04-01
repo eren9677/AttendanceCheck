@@ -1,26 +1,28 @@
 package com.example.attendancecheck.adapters
 
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.attendancecheck.R
 import com.example.attendancecheck.api.Course
-import com.google.android.material.button.MaterialButton
+import com.example.attendancecheck.databinding.ItemCourseBinding
 
 class CourseAdapter(
-    private val onEnrollClick: ((Course) -> Unit)? = null,
-    private val onDeleteClick: ((Course) -> Unit)? = null
+    private val onCourseClick: (Course) -> Unit,
+    private val onDeleteClick: (Course) -> Unit,
+    private val onGenerateQRClick: (Course) -> Unit,
+    private val onEnrollClick: (Course) -> Unit
 ) : ListAdapter<Course, CourseAdapter.CourseViewHolder>(CourseDiffCallback()) {
 
     private var isShowingAvailableCourses = true
     private var isLecturerView = false
+    private var activeQRCodeCourseId: Int? = null
+    private var remainingSeconds: Int = 0
 
-    fun setShowingAvailableCourses(isAvailable: Boolean) {
-        isShowingAvailableCourses = isAvailable
+    fun setShowingAvailableCourses(showing: Boolean) {
+        isShowingAvailableCourses = showing
         notifyDataSetChanged()
     }
 
@@ -29,43 +31,72 @@ class CourseAdapter(
         notifyDataSetChanged()
     }
 
+    fun setActiveQRCode(courseId: Int, remaining: Int) {
+        activeQRCodeCourseId = courseId
+        remainingSeconds = remaining
+        notifyDataSetChanged()
+    }
+
+    fun clearActiveQRCode() {
+        activeQRCodeCourseId = null
+        remainingSeconds = 0
+        notifyDataSetChanged()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CourseViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_course, parent, false)
-        return CourseViewHolder(view)
+        val binding = ItemCourseBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return CourseViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: CourseViewHolder, position: Int) {
         holder.bind(getItem(position))
     }
 
-    inner class CourseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val tvCourseCode: TextView = itemView.findViewById(R.id.tvCourseCode)
-        private val tvCourseName: TextView = itemView.findViewById(R.id.tvCourseName)
-        private val tvLecturerName: TextView = itemView.findViewById(R.id.tvLecturerName)
-        private val tvAttendance: TextView = itemView.findViewById(R.id.tvAttendance)
-        private val btnEnroll: MaterialButton = itemView.findViewById(R.id.btnEnroll)
-        private val btnDelete: MaterialButton = itemView.findViewById(R.id.btnDelete)
+    inner class CourseViewHolder(
+        private val binding: ItemCourseBinding
+    ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(course: Course) {
-            tvCourseCode.text = course.course_code
-            tvCourseName.text = course.course_name
-            tvLecturerName.text = "Lecturer: ${course.lecturer_name}"
-            
-            if (isShowingAvailableCourses) {
-                btnEnroll.visibility = View.VISIBLE
-                btnDelete.visibility = View.GONE
-                btnEnroll.setOnClickListener { onEnrollClick?.invoke(course) }
-                tvAttendance.text = "Click to enroll"
-            } else {
-                btnEnroll.visibility = View.GONE
+            binding.apply {
+                root.setOnClickListener { onCourseClick(course) }
+                
+                tvCourseCode.text = course.course_code
+                tvCourseName.text = course.course_name
+                tvLecturerName.text = "Lecturer: ${course.lecturer_name}"
+                
                 if (isLecturerView) {
-                    btnDelete.visibility = View.VISIBLE
-                    btnDelete.setOnClickListener { onDeleteClick?.invoke(course) }
-                    tvAttendance.text = "Enrolled Students: ${course.student_count ?: 0}"
+                    tvStudentCount.text = "Students: ${course.student_count}"
+                    tvStudentCount.visibility = ViewGroup.VISIBLE
                 } else {
-                    btnDelete.visibility = View.GONE
-                    tvAttendance.text = "Attendance: 0%" // Placeholder for actual attendance data
+                    tvStudentCount.visibility = ViewGroup.GONE
+                }
+
+                // Handle button visibility based on view type
+                btnEnroll.visibility = if (isShowingAvailableCourses && !isLecturerView) {
+                    ViewGroup.VISIBLE
+                } else {
+                    ViewGroup.GONE
+                }
+                btnDelete.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
+                btnGenerateQR.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
+
+                // Set button click listeners
+                btnEnroll.setOnClickListener { onEnrollClick(course) }
+                btnDelete.setOnClickListener { onDeleteClick(course) }
+                btnGenerateQR.setOnClickListener { onGenerateQRClick(course) }
+
+                // Handle active QR code state
+                if (course.course_id == activeQRCodeCourseId) {
+                    root.setBackgroundResource(R.drawable.bg_course_active)
+                    tvRemainingTime.visibility = ViewGroup.VISIBLE
+                    tvRemainingTime.text = "QR Code expires in: ${remainingSeconds}s"
+                } else {
+                    root.setBackgroundResource(R.drawable.bg_course)
+                    tvRemainingTime.visibility = ViewGroup.GONE
                 }
             }
         }
