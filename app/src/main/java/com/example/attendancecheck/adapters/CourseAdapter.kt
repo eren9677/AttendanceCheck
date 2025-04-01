@@ -12,13 +12,20 @@ import com.example.attendancecheck.api.Course
 import com.google.android.material.button.MaterialButton
 
 class CourseAdapter(
-    private val onEnrollClick: ((Course) -> Unit)? = null
+    private val onEnrollClick: ((Course) -> Unit)? = null,
+    private val onDeleteClick: ((Course) -> Unit)? = null
 ) : ListAdapter<Course, CourseAdapter.CourseViewHolder>(CourseDiffCallback()) {
 
     private var isShowingAvailableCourses = true
+    private var isLecturerView = false
 
     fun setShowingAvailableCourses(isAvailable: Boolean) {
         isShowingAvailableCourses = isAvailable
+        notifyDataSetChanged()
+    }
+
+    fun setLecturerView(isLecturer: Boolean) {
+        isLecturerView = isLecturer
         notifyDataSetChanged()
     }
 
@@ -38,6 +45,7 @@ class CourseAdapter(
         private val tvLecturerName: TextView = itemView.findViewById(R.id.tvLecturerName)
         private val tvAttendance: TextView = itemView.findViewById(R.id.tvAttendance)
         private val btnEnroll: MaterialButton = itemView.findViewById(R.id.btnEnroll)
+        private val btnDelete: MaterialButton = itemView.findViewById(R.id.btnDelete)
 
         fun bind(course: Course) {
             tvCourseCode.text = course.course_code
@@ -46,13 +54,17 @@ class CourseAdapter(
             
             if (isShowingAvailableCourses) {
                 btnEnroll.visibility = View.VISIBLE
+                btnDelete.visibility = View.GONE
                 btnEnroll.setOnClickListener { onEnrollClick?.invoke(course) }
                 tvAttendance.text = "Click to enroll"
             } else {
                 btnEnroll.visibility = View.GONE
-                if (course.student_count != null) {
-                    tvAttendance.text = "Enrolled Students: ${course.student_count}"
+                if (isLecturerView) {
+                    btnDelete.visibility = View.VISIBLE
+                    btnDelete.setOnClickListener { onDeleteClick?.invoke(course) }
+                    tvAttendance.text = "Enrolled Students: ${course.student_count ?: 0}"
                 } else {
+                    btnDelete.visibility = View.GONE
                     tvAttendance.text = "Attendance: 0%" // Placeholder for actual attendance data
                 }
             }

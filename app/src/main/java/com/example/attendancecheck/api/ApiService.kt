@@ -2,9 +2,11 @@ package com.example.attendancecheck.api
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.Path
 
 interface ApiService {
     @POST("api/login")
@@ -29,6 +31,12 @@ interface ApiService {
     suspend fun enrollInCourse(
         @Header("Authorization") token: String,
         @Body enrollmentData: Map<String, Int>
+    ): Response<Any>
+
+    @DELETE("api/courses/{course_id}")
+    suspend fun deleteCourse(
+        @Header("Authorization") token: String,
+        @Path("course_id") courseId: Int
     ): Response<Any>
 }
 

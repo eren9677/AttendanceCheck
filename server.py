@@ -270,6 +270,44 @@ def create_course(current_user):
         cursor.close()
         conn.close()
 
+@app.route('/api/courses/<int:course_id>', methods=['DELETE'])
+@token_required
+def delete_course(current_user, course_id):
+    if current_user['role'] != 'lecturer':
+        return jsonify({"error": "Only lecturers can delete courses"}), 403
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Verify the lecturer owns this course
+        cursor.execute(
+            "SELECT * FROM courses WHERE course_id = %s AND lecturer_id = %s",
+            (course_id, current_user['user_id'])
+        )
+        if not cursor.fetchone():
+            return jsonify({"error": "Course not found or you don't have permission"}), 404
+        
+        # Delete all enrollments for this course
+        cursor.execute("DELETE FROM enrollments WHERE course_id = %s", (course_id,))
+        
+        # Delete all lectures for this course
+        cursor.execute("DELETE FROM lectures WHERE course_id = %s", (course_id,))
+        
+        # Finally, delete the course
+        cursor.execute("DELETE FROM courses WHERE course_id = %s", (course_id,))
+        
+        conn.commit()
+        return jsonify({"message": "Course deleted successfully"}), 200
+    except Error as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 # Lecture APIs
 @app.route('/api/lectures', methods=['POST'])
 @token_required
