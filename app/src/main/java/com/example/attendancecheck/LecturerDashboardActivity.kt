@@ -37,7 +37,7 @@ class LecturerDashboardActivity : AppCompatActivity() {
 
         // Set up RecyclerView
         courseAdapter = CourseAdapter()
-        courseAdapter.setLecturerView(true)
+        courseAdapter.setShowingAvailableCourses(false)
         binding.rvCourses.apply {
             layoutManager = LinearLayoutManager(this@LecturerDashboardActivity)
             adapter = courseAdapter
@@ -45,7 +45,7 @@ class LecturerDashboardActivity : AppCompatActivity() {
 
         // Set up Add Course button
         binding.btnAddCourse.setOnClickListener {
-            // TODO: Navigate to Add Course screen
+            startActivity(Intent(this, AddCourseActivity::class.java))
         }
 
         // Load courses
@@ -73,5 +73,10 @@ class LecturerDashboardActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        loadCourses() // Reload courses when returning from AddCourseActivity
     }
 } 

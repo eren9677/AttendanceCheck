@@ -15,6 +15,21 @@ interface ApiService {
 
     @GET("api/courses")
     suspend fun getCourses(@Header("Authorization") token: String): Response<CoursesResponse>
+
+    @GET("api/courses/all")
+    suspend fun getAllCourses(@Header("Authorization") token: String): Response<CoursesResponse>
+
+    @POST("api/courses")
+    suspend fun createCourse(
+        @Header("Authorization") token: String,
+        @Body courseData: Map<String, String>
+    ): Response<Any>
+
+    @POST("api/enrollments")
+    suspend fun enrollInCourse(
+        @Header("Authorization") token: String,
+        @Body enrollmentData: Map<String, Int>
+    ): Response<Any>
 }
 
 data class LoginRequest(
@@ -44,13 +59,6 @@ data class User(
     val name: String,
     val university_id: String,
     val role: String
-)
-
-data class Course(
-    val course_id: Int,
-    val course_code: String,
-    val course_name: String,
-    val lecturer_id: Int
 )
 
 data class CoursesResponse(

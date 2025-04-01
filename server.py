@@ -167,15 +167,64 @@ def get_courses(current_user):
     cursor = conn.cursor(dictionary=True)
     try:
         if current_user['role'] == 'lecturer':
+            # For lecturers, get their courses with student counts
             cursor.execute(
-                "SELECT * FROM courses WHERE lecturer_id = %s",
+                """
+                SELECT c.*, u.name as lecturer_name,
+                       (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.course_id) as student_count
+                FROM courses c
+                JOIN users u ON c.lecturer_id = u.user_id
+                WHERE c.lecturer_id = %s
+                """,
                 (current_user['user_id'],)
             )
         else:  # student
+            # For students, get their enrolled courses with lecturer names
             cursor.execute(
-                "SELECT c.* FROM courses c JOIN enrollments e ON c.course_id = e.course_id WHERE e.student_id = %s",
+                """
+                SELECT c.*, u.name as lecturer_name
+                FROM courses c
+                JOIN enrollments e ON c.course_id = e.course_id
+                JOIN users u ON c.lecturer_id = u.user_id
+                WHERE e.student_id = %s
+                """,
                 (current_user['user_id'],)
             )
+        
+        courses = cursor.fetchall()
+        return jsonify({"courses": courses}), 200
+    except Error as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/api/courses/all', methods=['GET'])
+@token_required
+def get_all_courses(current_user):
+    if current_user['role'] != 'student':
+        return jsonify({"error": "Only students can view all courses"}), 403
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get all courses except those the student is already enrolled in
+        cursor.execute(
+            """
+            SELECT c.*, u.name as lecturer_name 
+            FROM courses c 
+            JOIN users u ON c.lecturer_id = u.user_id 
+            WHERE c.course_id NOT IN (
+                SELECT course_id 
+                FROM enrollments 
+                WHERE student_id = %s
+            )
+            """,
+            (current_user['user_id'],)
+        )
         
         courses = cursor.fetchall()
         return jsonify({"courses": courses}), 200
