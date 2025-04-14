@@ -1,5 +1,6 @@
 package com.example.attendancecheck.adapters
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -22,6 +23,9 @@ class CourseAdapter(
     private var activeQRCodeCourseId: Int? = null
     private var coursesWithShowQRButton = mutableSetOf<Int>()
     private var remainingSeconds: Int = 0
+    
+    // Track attended courses
+    private val attendedCourses = mutableSetOf<Int>()
 
     fun setShowingAvailableCourses(showing: Boolean) {
         isShowingAvailableCourses = showing
@@ -53,6 +57,32 @@ class CourseAdapter(
         } else {
             coursesWithShowQRButton.remove(courseId)
         }
+        notifyDataSetChanged()
+    }
+    
+    /**
+     * Mark a course as attended for the current session
+     * @param courseId ID of the course that was attended
+     */
+    fun markCourseAsAttended(courseId: Int) {
+        attendedCourses.add(courseId)
+        notifyDataSetChanged()
+    }
+    
+    /**
+     * Check if a course has been attended
+     * @param courseId ID of the course to check
+     * @return true if course has been attended
+     */
+    fun isCourseAttended(courseId: Int): Boolean {
+        return attendedCourses.contains(courseId)
+    }
+    
+    /**
+     * Clear all attended courses (usually on logout)
+     */
+    fun clearAttendedCourses() {
+        attendedCourses.clear()
         notifyDataSetChanged()
     }
 
@@ -110,12 +140,24 @@ class CourseAdapter(
                 btnGenerateQR.setOnClickListener { onGenerateQRClick(course) }
                 btnShowQR.setOnClickListener { onShowQRClick(course) }
 
-                // Handle active QR code state
-                if (course.course_id == activeQRCodeCourseId) {
+                // Check if the course has been attended
+                val isAttended = attendedCourses.contains(course.course_id)
+                
+                // Set background and attendance indicators
+                if (isAttended && course.has_active_qr) {
+                    // Course is attended and has active QR code - show green success background and message
+                    root.setBackgroundResource(R.drawable.bg_course_attended)
+                    tvRemainingTime.visibility = ViewGroup.VISIBLE
+                    tvRemainingTime.text = "✓ Attendance Completed"
+                    tvRemainingTime.setTextColor(Color.parseColor("#4CAF50")) // Green color
+                } else if (course.course_id == activeQRCodeCourseId && !isAttended) {
+                    // Course has active QR code but not attended - show regular active background with timer
                     root.setBackgroundResource(R.drawable.bg_course_active)
                     tvRemainingTime.visibility = ViewGroup.VISIBLE
                     tvRemainingTime.text = "QR Code expires in: ${remainingSeconds}s"
+                    tvRemainingTime.setTextColor(Color.RED) // Default red color for countdown
                 } else {
+                    // Regular course - normal background
                     root.setBackgroundResource(R.drawable.bg_course)
                     tvRemainingTime.visibility = ViewGroup.GONE
                 }

@@ -202,7 +202,11 @@ class QRScannerActivity : AppCompatActivity() {
                     
                     // Return to dashboard after 2 seconds
                     binding.root.postDelayed({
-                        setResult(RESULT_OK)
+                        // Create a result intent with the course ID
+                        val resultIntent = Intent().apply {
+                            putExtra("COURSE_ID", courseId)
+                        }
+                        setResult(RESULT_OK, resultIntent)
                         finish()
                     }, 2000)
                     
