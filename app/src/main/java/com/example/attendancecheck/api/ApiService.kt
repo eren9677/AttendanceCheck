@@ -58,6 +58,12 @@ interface ApiService {
         @Path("courseId") courseId: Int,
         @Body request: QRCodeRequest
     ): Response<QRCodeResponse>
+    
+    @POST("api/attendance/check-in")
+    suspend fun checkInAttendance(
+        @Header("Authorization") token: String,
+        @Body checkInData: Map<String, String>
+    ): Response<AttendanceResponse>
 }
 
 data class LoginRequest(
@@ -108,4 +114,8 @@ data class QRCodeResponse(
     val expires_at: String,
     val remaining_seconds: Int,
     val qr_image: String
+)
+
+data class AttendanceResponse(
+    val message: String
 ) 

@@ -10,7 +10,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.TimePicker
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -37,6 +36,17 @@ class LecturerDashboardActivity : AppCompatActivity() {
     private lateinit var apiService: ApiService
     private lateinit var courseAdapter: CourseAdapter
     private var countdownTimer: CountDownTimer? = null
+    
+    // Store current active QR code data
+    private var activeQRData: Map<Int, QRCodeData> = mutableMapOf()
+
+    // Data class to store QR code information
+    data class QRCodeData(
+        val qrImage: String,
+        val expiresAt: String,
+        val remainingSeconds: Int,
+        val courseId: Int
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +70,7 @@ class LecturerDashboardActivity : AppCompatActivity() {
             onCourseClick = { course -> showCourseDetails(course) },
             onDeleteClick = { course -> showDeleteConfirmationDialog(course) },
             onGenerateQRClick = { course -> generateQRCode(course) },
+            onShowQRClick = { course -> showStoredQRCode(course) },
             onEnrollClick = { _ -> /* Not used in lecturer view */ }
         )
         courseAdapter.setLecturerView(true)
@@ -130,6 +141,16 @@ class LecturerDashboardActivity : AppCompatActivity() {
                 .show()
         } catch (e: Exception) {
             Toast.makeText(this, "Error displaying QR code: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Function to display the stored QR code for a given course
+    private fun showStoredQRCode(course: Course) {
+        val qrData = (activeQRData as? MutableMap<Int, QRCodeData>)?.get(course.course_id)
+        if (qrData != null) {
+            showQRCodeDialog(qrData.qrImage, qrData.expiresAt)
+        } else {
+            Toast.makeText(this, "No active QR code found for this course", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -214,6 +235,17 @@ class LecturerDashboardActivity : AppCompatActivity() {
                     val courses = response.body()?.courses ?: emptyList()
                     courseAdapter.submitList(courses)
                     updateNoCoursesVisibility(courses)
+                    
+                    // Update active QR status for courses
+                    courses.forEach { course ->
+                        if ((activeQRData as? MutableMap<Int, QRCodeData>)?.containsKey(course.course_id) == true) {
+                            val qrData = (activeQRData as MutableMap<Int, QRCodeData>)[course.course_id]
+                            qrData?.let {
+                                courseAdapter.setActiveQRCode(course.course_id, it.remainingSeconds)
+                                courseAdapter.setShowQRButton(course.course_id, true)
+                            }
+                        }
+                    }
                 } else {
                     val errorBody = response.errorBody()?.string()
                     Toast.makeText(this@LecturerDashboardActivity, 
@@ -266,8 +298,34 @@ class LecturerDashboardActivity : AppCompatActivity() {
                     
                     if (response.isSuccessful) {
                         response.body()?.let { qrResponse ->
+                            // Store QR code data
+                            (activeQRData as? MutableMap<Int, QRCodeData>)?.let { map ->
+                                map[course.course_id] = QRCodeData(
+                                    qrImage = qrResponse.qr_image,
+                                    expiresAt = qrResponse.expires_at,
+                                    remainingSeconds = qrResponse.remaining_seconds,
+                                    courseId = course.course_id
+                                )
+                            } ?: run {
+                                // Initialize map if not done
+                                activeQRData = mutableMapOf(
+                                    course.course_id to QRCodeData(
+                                        qrImage = qrResponse.qr_image,
+                                        expiresAt = qrResponse.expires_at,
+                                        remainingSeconds = qrResponse.remaining_seconds,
+                                        courseId = course.course_id
+                                    )
+                                )
+                            }
+                            
+                            // Show QR code
                             showQRCodeDialog(qrResponse.qr_image, qrResponse.expires_at)
+                            
+                            // Update UI to show active QR code and show QR button
                             courseAdapter.setActiveQRCode(course.course_id, qrResponse.remaining_seconds)
+                            courseAdapter.setShowQRButton(course.course_id, true)
+                            
+                            // Start countdown timer
                             startCountdownTimer(course.course_id, qrResponse.remaining_seconds)
                         } ?: run {
                             Toast.makeText(this@LecturerDashboardActivity, 
@@ -295,11 +353,23 @@ class LecturerDashboardActivity : AppCompatActivity() {
         countdownTimer = object : CountDownTimer(remainingSeconds * 1000L, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 val seconds = (millisUntilFinished / 1000).toInt()
+                
+                // Update the remaining seconds in stored data
+                (activeQRData as? MutableMap<Int, QRCodeData>)?.get(courseId)?.let { qrData ->
+                    (activeQRData as MutableMap<Int, QRCodeData>)[courseId] = qrData.copy(remainingSeconds = seconds)
+                }
+                
+                // Update adapter
                 courseAdapter.setActiveQRCode(courseId, seconds)
             }
 
             override fun onFinish() {
-                courseAdapter.clearActiveQRCode()
+                // Remove the expired QR code from storage
+                (activeQRData as? MutableMap<Int, QRCodeData>)?.remove(courseId)
+                
+                // Clear active QR code from adapter
+                courseAdapter.clearActiveQRCode(courseId)
+                courseAdapter.setShowQRButton(courseId, false)
             }
         }.start()
     }

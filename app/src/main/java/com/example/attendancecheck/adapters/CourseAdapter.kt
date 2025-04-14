@@ -13,12 +13,14 @@ class CourseAdapter(
     private val onCourseClick: (Course) -> Unit,
     private val onDeleteClick: (Course) -> Unit,
     private val onGenerateQRClick: (Course) -> Unit,
+    private val onShowQRClick: (Course) -> Unit,
     private val onEnrollClick: (Course) -> Unit
 ) : ListAdapter<Course, CourseAdapter.CourseViewHolder>(CourseDiffCallback()) {
 
     private var isShowingAvailableCourses = true
     private var isLecturerView = false
     private var activeQRCodeCourseId: Int? = null
+    private var coursesWithShowQRButton = mutableSetOf<Int>()
     private var remainingSeconds: Int = 0
 
     fun setShowingAvailableCourses(showing: Boolean) {
@@ -37,9 +39,20 @@ class CourseAdapter(
         notifyDataSetChanged()
     }
 
-    fun clearActiveQRCode() {
-        activeQRCodeCourseId = null
-        remainingSeconds = 0
+    fun clearActiveQRCode(courseId: Int? = null) {
+        if (courseId == null || courseId == activeQRCodeCourseId) {
+            activeQRCodeCourseId = null
+            remainingSeconds = 0
+            notifyDataSetChanged()
+        }
+    }
+    
+    fun setShowQRButton(courseId: Int, show: Boolean) {
+        if (show) {
+            coursesWithShowQRButton.add(courseId)
+        } else {
+            coursesWithShowQRButton.remove(courseId)
+        }
         notifyDataSetChanged()
     }
 
@@ -83,11 +96,19 @@ class CourseAdapter(
                 }
                 btnDelete.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
                 btnGenerateQR.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
+                
+                // Show QR button visibility
+                btnShowQR.visibility = if (isLecturerView && coursesWithShowQRButton.contains(course.course_id)) {
+                    ViewGroup.VISIBLE
+                } else {
+                    ViewGroup.GONE
+                }
 
                 // Set button click listeners
                 btnEnroll.setOnClickListener { onEnrollClick(course) }
                 btnDelete.setOnClickListener { onDeleteClick(course) }
                 btnGenerateQR.setOnClickListener { onGenerateQRClick(course) }
+                btnShowQR.setOnClickListener { onShowQRClick(course) }
 
                 // Handle active QR code state
                 if (course.course_id == activeQRCodeCourseId) {

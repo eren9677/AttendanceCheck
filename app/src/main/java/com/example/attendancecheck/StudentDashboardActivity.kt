@@ -47,6 +47,7 @@ class StudentDashboardActivity : AppCompatActivity() {
             onCourseClick = { course -> handleCourseClick(course) },
             onDeleteClick = { _ -> /* Not used in student view */ },
             onGenerateQRClick = { _ -> /* Not used in student view */ },
+            onShowQRClick = { _ -> /* Not used in student view */ },
             onEnrollClick = { course -> enrollInCourse(course) }
         )
         courseAdapter.setShowingAvailableCourses(true)
@@ -89,8 +90,13 @@ class StudentDashboardActivity : AppCompatActivity() {
             .setTitle("Active QR Code")
             .setMessage("There is an active QR code for ${course.course_code}. Would you like to scan it?")
             .setPositiveButton("Scan") { _, _ ->
-                // TODO: Launch QR code scanner activity
-                Toast.makeText(this, "QR code scanner will be implemented", Toast.LENGTH_SHORT).show()
+                // Launch QR code scanner activity
+                val intent = Intent(this, QRScannerActivity::class.java).apply {
+                    putExtra("COURSE_ID", course.course_id)
+                    putExtra("COURSE_NAME", course.course_name)
+                    putExtra("COURSE_CODE", course.course_code)
+                }
+                startActivityForResult(intent, QRScannerActivity.REQUEST_CODE_SCAN)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -199,7 +205,7 @@ class StudentDashboardActivity : AppCompatActivity() {
 
                 override fun onFinish() {
                     // Clear the active QR code state
-                    courseAdapter.clearActiveQRCode()
+                    courseAdapter.clearActiveQRCode(activeCourse.course_id)
                 }
             }.start()
         }
@@ -253,5 +259,20 @@ class StudentDashboardActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         countdownTimer?.cancel()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == QRScannerActivity.REQUEST_CODE_SCAN && resultCode == RESULT_OK) {
+            // Reload the courses after successful scan
+            if (isShowingAvailableCourses) {
+                loadAvailableCourses()
+            } else {
+                loadEnrolledCourses()
+            }
+            
+            // Show success message
+            Toast.makeText(this, "Attendance recorded successfully", Toast.LENGTH_SHORT).show()
+        }
     }
 } 
