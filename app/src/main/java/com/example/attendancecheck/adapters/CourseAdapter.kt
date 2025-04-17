@@ -80,6 +80,42 @@ class CourseAdapter(
     }
     
     /**
+     * Determine if a QR code countdown should be shown for a course
+     * @param course The course to check
+     * @param isEnrolledView Whether we're in the enrolled courses view
+     * @return true if QR countdown should be shown
+     */
+    private fun shouldShowQRCountdown(course: Course, isEnrolledView: Boolean): Boolean {
+        val shouldShow = if (!isLecturerView) {
+            // Student view logic - only show QR countdown for enrolled courses that have an active QR
+            // and the student hasn't marked attendance yet
+            val hasActiveQR = course.has_active_qr
+            val isQRForThisCourse = course.course_id == activeQRCodeCourseId
+            val isInEnrolledView = !isShowingAvailableCourses
+            val hasNotAttendedYet = !attendedCourses.contains(course.course_id)
+            
+            // All conditions must be true
+            hasActiveQR && isQRForThisCourse && isInEnrolledView && hasNotAttendedYet
+        } else {
+            // Lecturer view logic - always show countdown for active QR
+            course.has_active_qr && course.course_id == activeQRCodeCourseId
+        }
+        
+        // Debug logging
+        android.util.Log.d("CourseAdapter", 
+            "Course ${course.course_code} (${course.course_id}): " +
+            "Show QR countdown = $shouldShow, " +
+            "isLecturerView = $isLecturerView, " +
+            "isShowingAvailableCourses = $isShowingAvailableCourses, " + 
+            "hasActiveQR = ${course.has_active_qr}, " +
+            "isActiveQRCourse = ${course.course_id == activeQRCodeCourseId}, " +
+            "isAttended = ${attendedCourses.contains(course.course_id)}"
+        )
+        
+        return shouldShow
+    }
+    
+    /**
      * Clear all attended courses (usually on logout)
      */
     fun clearAttendedCourses() {
@@ -153,8 +189,8 @@ class CourseAdapter(
                     tvRemainingTime.visibility = ViewGroup.VISIBLE
                     tvRemainingTime.text = "✓ Attendance Completed"
                     tvRemainingTime.setTextColor(Color.parseColor("#4CAF50")) // Green color
-                } else if (course.course_id == activeQRCodeCourseId && !isAttended) {
-                    // Course has active QR code but not attended - show regular active background with timer
+                } else if (shouldShowQRCountdown(course, !isLecturerView)) {
+                    // Only show QR countdown for enrolled courses (not in available courses)
                     root.setBackgroundResource(R.drawable.bg_course_active)
                     tvRemainingTime.visibility = ViewGroup.VISIBLE
                     tvRemainingTime.text = "QR Code expires in: ${remainingSeconds}s"

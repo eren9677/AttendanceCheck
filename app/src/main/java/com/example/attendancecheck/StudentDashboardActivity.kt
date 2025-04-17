@@ -189,6 +189,25 @@ class StudentDashboardActivity : AppCompatActivity() {
         binding.btnAvailableCourses.isSelected = isShowingAvailableCourses
         binding.btnMyCourses.isSelected = !isShowingAvailableCourses
         courseAdapter.setShowingAvailableCourses(isShowingAvailableCourses)
+        
+        // If we're switching to available courses view, clear any active QR code UI
+        if (isShowingAvailableCourses) {
+            clearEnrolledCoursesUi()
+        }
+    }
+    
+    /**
+     * Clear any UI elements related to enrolled courses when switching views
+     */
+    private fun clearEnrolledCoursesUi() {
+        // Cancel any active countdowns when moving to available courses view
+        countdownTimer?.cancel()
+        countdownTimer = null
+        
+        // Make sure no active course is shown in available courses view
+        courseAdapter.clearActiveQRCode()
+        
+        Log.d("StudentDashboard", "Cleared enrolled courses UI elements")
     }
 
     private fun updateNoCoursesVisibility(courses: List<Course>) {
@@ -218,8 +237,9 @@ class StudentDashboardActivity : AppCompatActivity() {
                     courseAdapter.submitList(courses)
                     updateNoCoursesVisibility(courses)
                     
-                    // Start countdown timer for courses with active QR codes
-                    startCountdownTimer(courses)
+                    // For available courses, we should NOT start countdown timers
+                    // as these are courses the student is not enrolled in yet
+                    Log.d("StudentDashboard", "Loaded ${courses.size} available courses, not showing QR expiration for these")
                 } else {
                     Toast.makeText(this@StudentDashboardActivity, 
                         "Failed to load available courses: ${response.message()}", 
@@ -255,7 +275,8 @@ class StudentDashboardActivity : AppCompatActivity() {
                     courseAdapter.submitList(courses)
                     updateNoCoursesVisibility(courses)
                     
-                    // Start countdown timer for courses with active QR codes
+                    // Only start countdown timer for enrolled courses
+                    Log.d("StudentDashboard", "Loaded ${courses.size} enrolled courses, showing QR expiration for these")
                     startCountdownTimer(courses)
                 } else {
                     Toast.makeText(this@StudentDashboardActivity, 
@@ -274,23 +295,40 @@ class StudentDashboardActivity : AppCompatActivity() {
         // Cancel existing timer if any
         countdownTimer?.cancel()
         
+        // Only start timers for enrolled courses with active QR codes
+        // This method should only be called from loadEnrolledCourses()
+        if (isShowingAvailableCourses) {
+            Log.d("StudentDashboard", "Not starting countdown timer because we're in available courses view")
+            return
+        }
+        
         // Find the course with the shortest remaining time
         val activeCourse = courses
             .filter { it.has_active_qr && it.qr_remaining_seconds > 0 }
             .minByOrNull { it.qr_remaining_seconds }
         
         if (activeCourse != null) {
+            Log.d("StudentDashboard", "Starting countdown timer for course: ${activeCourse.course_code} (${activeCourse.course_id}), ${activeCourse.qr_remaining_seconds}s remaining")
+            
             countdownTimer = object : CountDownTimer(activeCourse.qr_remaining_seconds * 1000L, 1000) {
                 override fun onTick(millisUntilFinished: Long) {
                     // Update the remaining time for the active course
-                    courseAdapter.setActiveQRCode(activeCourse.course_id, (millisUntilFinished / 1000).toInt())
+                    val seconds = (millisUntilFinished / 1000).toInt()
+                    courseAdapter.setActiveQRCode(activeCourse.course_id, seconds)
+                    
+                    if (seconds % 10 == 0) { // Log every 10 seconds to avoid too much output
+                        Log.d("StudentDashboard", "QR countdown for course ${activeCourse.course_code}: ${seconds}s remaining")
+                    }
                 }
 
                 override fun onFinish() {
                     // Clear the active QR code state
+                    Log.d("StudentDashboard", "QR countdown finished for course ${activeCourse.course_code}")
                     courseAdapter.clearActiveQRCode(activeCourse.course_id)
                 }
             }.start()
+        } else {
+            Log.d("StudentDashboard", "No active QR codes found among enrolled courses")
         }
     }
 
