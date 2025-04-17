@@ -3,6 +3,9 @@ package com.example.attendancecheck
 import android.content.Intent
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -27,7 +30,8 @@ class StudentDashboardActivity : AppCompatActivity() {
     // Set to store attended course IDs for persistence
     private val attendedCourseIds = mutableSetOf<Int>()
     private val PREFS_NAME = "AttendanceCheck"
-    private val ATTENDED_COURSES_KEY = "attended_courses"
+    private val ATTENDED_COURSES_KEY_PREFIX = "attended_courses_user_"
+    private var currentUserId: Int = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +43,18 @@ class StudentDashboardActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "Student Dashboard"
 
+        // Get current user ID from SharedPreferences
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        currentUserId = prefs.getInt("user_id", -1)
+        
+        if (currentUserId == -1) {
+            // User ID not found, redirect to login
+            Toast.makeText(this, "Session expired. Please log in again.", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         // Initialize Retrofit
         val retrofit = Retrofit.Builder()
             .baseUrl(Constants.BASE_URL)
@@ -47,7 +63,7 @@ class StudentDashboardActivity : AppCompatActivity() {
 
         apiService = retrofit.create(ApiService::class.java)
 
-        // Load saved attended courses
+        // Load saved attended courses for this specific user
         loadAttendedCourses()
         
         // Set up RecyclerView
@@ -56,7 +72,8 @@ class StudentDashboardActivity : AppCompatActivity() {
             onDeleteClick = { _ -> /* Not used in student view */ },
             onGenerateQRClick = { _ -> /* Not used in student view */ },
             onShowQRClick = { _ -> /* Not used in student view */ },
-            onEnrollClick = { course -> enrollInCourse(course) }
+            onEnrollClick = { course -> enrollInCourse(course) },
+            onCheckAttendanceClick = { _ -> /* Not used in student view */ }
         )
         courseAdapter.setShowingAvailableCourses(true)
         courseAdapter.setLecturerView(false) // Explicitly set to student view
@@ -93,24 +110,40 @@ class StudentDashboardActivity : AppCompatActivity() {
     }
     
     /**
-     * Save attended courses to SharedPreferences
+     * Save attended courses to SharedPreferences with user-specific key
      */
     private fun saveAttendedCourses() {
+        if (currentUserId == -1) return // Safety check
+        
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val editor = prefs.edit()
         
+        // User-specific key for attended courses
+        val attendedCoursesKey = ATTENDED_COURSES_KEY_PREFIX + currentUserId
+        
         // Convert set to comma-separated string 
         val courseIdsString = attendedCourseIds.joinToString(",")
-        editor.putString(ATTENDED_COURSES_KEY, courseIdsString)
+        editor.putString(attendedCoursesKey, courseIdsString)
         editor.apply()
+        
+        // Log for debugging
+        Log.d("StudentDashboard", "Saved attended courses for user $currentUserId: $courseIdsString")
     }
     
     /**
-     * Load attended courses from SharedPreferences
+     * Load attended courses from SharedPreferences using user-specific key
      */
     private fun loadAttendedCourses() {
+        if (currentUserId == -1) return // Safety check
+        
+        // Clear any existing data first
+        attendedCourseIds.clear()
+        
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val courseIdsString = prefs.getString(ATTENDED_COURSES_KEY, "")
+        
+        // User-specific key for attended courses
+        val attendedCoursesKey = ATTENDED_COURSES_KEY_PREFIX + currentUserId
+        val courseIdsString = prefs.getString(attendedCoursesKey, "")
         
         if (!courseIdsString.isNullOrEmpty()) {
             // Convert comma-separated string to set of integers
@@ -123,6 +156,9 @@ class StudentDashboardActivity : AppCompatActivity() {
                 }
             }
         }
+        
+        // Log for debugging
+        Log.d("StudentDashboard", "Loaded attended courses for user $currentUserId: ${attendedCourseIds.joinToString()}")
     }
 
     private fun handleCourseClick(course: Course) {
@@ -310,6 +346,8 @@ class StudentDashboardActivity : AppCompatActivity() {
             val courseId = data?.getIntExtra("COURSE_ID", -1) ?: -1
             
             if (courseId != -1) {
+                Log.d("StudentDashboard", "QR scan successful for course ID $courseId by user $currentUserId")
+                
                 // Mark this course as attended
                 courseAdapter.markCourseAsAttended(courseId)
                 
@@ -319,6 +357,8 @@ class StudentDashboardActivity : AppCompatActivity() {
                 
                 // Show success message
                 Toast.makeText(this, "Attendance recorded successfully", Toast.LENGTH_SHORT).show()
+            } else {
+                Log.e("StudentDashboard", "Invalid course ID received from QR scanner")
             }
             
             // Reload the courses after successful scan
@@ -338,6 +378,65 @@ class StudentDashboardActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Cancel any active countdowns
         countdownTimer?.cancel()
+        
+        // Clear the adapter state to avoid issues if another user logs in
+        if (::courseAdapter.isInitialized) {
+            courseAdapter.clearAttendedCourses()
+        }
+        
+        Log.d("StudentDashboard", "Activity destroyed, cleared adapter state")
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_dashboard, menu)
+        return true
+    }
+    
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_logout -> {
+                logout()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+    
+    private fun logout() {
+        // Show confirmation dialog
+        AlertDialog.Builder(this)
+            .setTitle("Logout")
+            .setMessage("Are you sure you want to logout?")
+            .setPositiveButton("Yes") { _, _ ->
+                // Clear user data
+                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                prefs.edit()
+                    .remove("token")
+                    .remove("user_role")
+                    .remove("user_id")
+                    .remove("user_name")
+                    .remove("university_id")
+                    .apply()
+                
+                // Clear in-memory data
+                attendedCourseIds.clear()
+                
+                // Clear adapter state
+                if (::courseAdapter.isInitialized) {
+                    courseAdapter.clearAttendedCourses()
+                }
+                
+                // Return to login screen
+                val intent = Intent(this, LoginActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
+                finish()
+                
+                Log.d("StudentDashboard", "User $currentUserId logged out successfully")
+            }
+            .setNegativeButton("No", null)
+            .show()
     }
 } 

@@ -43,6 +43,9 @@
             android:name=".QRScannerActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+        <activity
+            android:name=".AttendanceReportActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

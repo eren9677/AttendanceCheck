@@ -300,6 +300,8 @@ def delete_course(current_user, course_id):
     if current_user['role'] != 'lecturer':
         return jsonify({"error": "Only lecturers can delete courses"}), 403
     
+    print(f"Attempting to delete course ID: {course_id} by lecturer ID: {current_user['user_id']}")
+    
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
@@ -311,23 +313,65 @@ def delete_course(current_user, course_id):
             "SELECT * FROM courses WHERE course_id = %s AND lecturer_id = %s",
             (course_id, current_user['user_id'])
         )
-        if not cursor.fetchone():
+        course = cursor.fetchone()
+        if not course:
+            print(f"Course not found or unauthorized: {course_id}")
             return jsonify({"error": "Course not found or you don't have permission"}), 404
         
-        # Delete all enrollments for this course
-        cursor.execute("DELETE FROM enrollments WHERE course_id = %s", (course_id,))
+        print(f"Found course to delete: {course['course_code']} - {course['course_name']}")
         
-        # Delete all lectures for this course
+        # Get all lectures for this course
+        cursor.execute("SELECT lecture_id FROM lectures WHERE course_id = %s", (course_id,))
+        lectures = cursor.fetchall()
+        lecture_ids = [lecture['lecture_id'] for lecture in lectures]
+        
+        print(f"Found {len(lecture_ids)} lectures to delete")
+        
+        # No need to explicitly start a transaction - MySQL connector automatically uses transactions
+        # and we'll commit at the end or rollback on error
+        
+        # Delete attendance records first (depends on lectures and qr_codes)
+        if lecture_ids:
+            lecture_ids_str = ','.join(['%s'] * len(lecture_ids))
+            cursor.execute(
+                f"DELETE FROM attendance WHERE lecture_id IN ({lecture_ids_str})",
+                lecture_ids
+            )
+            print(f"Deleted {cursor.rowcount} attendance records")
+        
+        # Delete QR codes (depends on lectures)
+        if lecture_ids:
+            lecture_ids_str = ','.join(['%s'] * len(lecture_ids))
+            cursor.execute(
+                f"DELETE FROM qr_codes WHERE lecture_id IN ({lecture_ids_str})",
+                lecture_ids
+            )
+            print(f"Deleted {cursor.rowcount} QR codes")
+        
+        # Delete lectures (depends on course)
         cursor.execute("DELETE FROM lectures WHERE course_id = %s", (course_id,))
+        print(f"Deleted {cursor.rowcount} lectures")
+        
+        # Delete enrollments (depends on course)
+        cursor.execute("DELETE FROM enrollments WHERE course_id = %s", (course_id,))
+        print(f"Deleted {cursor.rowcount} enrollments (unenrolled students)")
         
         # Finally, delete the course
         cursor.execute("DELETE FROM courses WHERE course_id = %s", (course_id,))
+        print(f"Deleted course {course_id}")
         
+        # Commit the transaction
         conn.commit()
-        return jsonify({"message": "Course deleted successfully"}), 200
-    except Error as e:
+        
+        print(f"Course deletion complete: {course_id}")
+        return jsonify({"message": "Course and all related data deleted successfully"}), 200
+    except Exception as e:
+        # Roll back the transaction if any error occurs
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        print(f"Error in delete_course: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to delete course: {str(e)}"}), 500
     finally:
         cursor.close()
         conn.close()
@@ -578,6 +622,144 @@ def check_in(current_user):
         return jsonify({"message": "Attendance recorded successfully"}), 201
     except Error as e:
         conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/api/courses/<int:course_id>/attendance', methods=['GET'])
+@token_required
+def get_course_attendance(current_user, course_id):
+    """Get attendance data for all students in a course across all dates."""
+    if current_user['role'] != 'lecturer':
+        return jsonify({"error": "Only lecturers can view attendance reports"}), 403
+    
+    print(f"Fetching attendance data for course ID: {course_id}, requested by user ID: {current_user['user_id']}")
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Verify the lecturer owns this course
+        cursor.execute(
+            "SELECT * FROM courses WHERE course_id = %s AND lecturer_id = %s",
+            (course_id, current_user['user_id'])
+        )
+        course = cursor.fetchone()
+        if not course:
+            print(f"Course not found or unauthorized: {course_id}")
+            return jsonify({"error": "Course not found or you don't have permission"}), 404
+        
+        print(f"Course found: {course['course_code']} - {course['course_name']}")
+        
+        # Get all students enrolled in the course
+        cursor.execute(
+            """
+            SELECT u.user_id, u.name as student_name, u.university_id as student_id
+            FROM users u
+            JOIN enrollments e ON u.user_id = e.student_id
+            WHERE e.course_id = %s AND u.role = 'student'
+            ORDER BY u.name
+            """,
+            (course_id,)
+        )
+        students = cursor.fetchall()
+        
+        print(f"Found {len(students)} students enrolled in the course")
+        
+        if not students:
+            return jsonify({
+                "students": [],
+                "dates": []
+            }), 200
+        
+        # Get all lectures for this course
+        cursor.execute(
+            """
+            SELECT lecture_id, DATE_FORMAT(date, '%Y-%m-%d') as lecture_date
+            FROM lectures
+            WHERE course_id = %s
+            ORDER BY date DESC
+            """,
+            (course_id,)
+        )
+        lectures = cursor.fetchall()
+        
+        print(f"Found {len(lectures)} lectures for the course")
+        
+        if not lectures:
+            return jsonify({
+                "students": [],
+                "dates": []
+            }), 200
+        
+        # Extract unique dates
+        dates = list(set(lecture['lecture_date'] for lecture in lectures))
+        dates.sort(reverse=True)  # Most recent dates first
+        
+        print(f"Found {len(dates)} unique lecture dates")
+        
+        # Get all attendance records for this course in one query for efficiency
+        cursor.execute(
+            """
+            SELECT a.student_id, l.lecture_id, DATE_FORMAT(l.date, '%Y-%m-%d') as lecture_date
+            FROM attendance a
+            JOIN lectures l ON a.lecture_id = l.lecture_id
+            WHERE l.course_id = %s
+            """,
+            (course_id,)
+        )
+        all_attendance = cursor.fetchall()
+        
+        print(f"Found {len(all_attendance)} attendance records")
+        
+        # Create a lookup map for quick access
+        attendance_lookup = {}
+        for record in all_attendance:
+            student_id = record['student_id']
+            date = record['lecture_date']
+            
+            if student_id not in attendance_lookup:
+                attendance_lookup[student_id] = set()
+            
+            attendance_lookup[student_id].add(date)
+        
+        # Format the final response
+        formatted_students = []
+        for student in students:
+            student_id = student['user_id']
+            attendance_dates = attendance_lookup.get(student_id, set())
+            
+            # Create attendance map for this student
+            attendance_data = {}
+            for date in dates:
+                attendance_data[date] = date in attendance_dates
+            
+            formatted_student = {
+                'student_id': student['student_id'],
+                'student_name': student['student_name'],
+                'attendance': attendance_data
+            }
+            
+            formatted_students.append(formatted_student)
+            
+            # Debug print
+            print(f"Student: {student['student_name']} has {len(attendance_dates)} attendance records")
+        
+        result = {
+            "students": formatted_students,
+            "dates": dates
+        }
+        
+        print(f"Returning attendance data with {len(formatted_students)} students and {len(dates)} dates")
+        
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"Error in get_course_attendance: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()

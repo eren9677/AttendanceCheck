@@ -64,6 +64,12 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body checkInData: Map<String, String>
     ): Response<AttendanceResponse>
+
+    @GET("api/courses/{course_id}/attendance")
+    suspend fun getCourseAttendance(
+        @Header("Authorization") token: String,
+        @Path("course_id") courseId: Int
+    ): Response<AttendanceReportResponse>
 }
 
 data class LoginRequest(
@@ -118,4 +124,15 @@ data class QRCodeResponse(
 
 data class AttendanceResponse(
     val message: String
+)
+
+data class AttendanceReportResponse(
+    val students: List<StudentAttendance>,
+    val dates: List<String>
+)
+
+data class StudentAttendance(
+    val student_id: String,
+    val student_name: String,
+    val attendance: Map<String, Boolean>
 ) 

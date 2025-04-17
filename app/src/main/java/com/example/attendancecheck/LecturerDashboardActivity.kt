@@ -5,7 +5,10 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.util.Base64
+import android.util.Log
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.SeekBar
@@ -36,6 +39,8 @@ class LecturerDashboardActivity : AppCompatActivity() {
     private lateinit var apiService: ApiService
     private lateinit var courseAdapter: CourseAdapter
     private var countdownTimer: CountDownTimer? = null
+    private var currentUserId: Int = -1
+    private val PREFS_NAME = "AttendanceCheck"
     
     // Store current active QR code data
     private var activeQRData: Map<Int, QRCodeData> = mutableMapOf()
@@ -57,6 +62,18 @@ class LecturerDashboardActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.title = "Lecturer Dashboard"
 
+        // Get current user ID from SharedPreferences
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        currentUserId = prefs.getInt("user_id", -1)
+        
+        if (currentUserId == -1) {
+            // User ID not found, redirect to login
+            Toast.makeText(this, "Session expired. Please log in again.", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         // Initialize Retrofit
         val retrofit = Retrofit.Builder()
             .baseUrl(Constants.BASE_URL)
@@ -66,14 +83,7 @@ class LecturerDashboardActivity : AppCompatActivity() {
         apiService = retrofit.create(ApiService::class.java)
 
         // Set up RecyclerView
-        courseAdapter = CourseAdapter(
-            onCourseClick = { course -> showCourseDetails(course) },
-            onDeleteClick = { course -> showDeleteConfirmationDialog(course) },
-            onGenerateQRClick = { course -> generateQRCode(course) },
-            onShowQRClick = { course -> showStoredQRCode(course) },
-            onEnrollClick = { _ -> /* Not used in lecturer view */ }
-        )
-        courseAdapter.setLecturerView(true)
+        setupCourseAdapter()
         courseAdapter.setShowingAvailableCourses(false)
         binding.rvCourses.apply {
             layoutManager = LinearLayoutManager(this@LecturerDashboardActivity)
@@ -87,6 +97,68 @@ class LecturerDashboardActivity : AppCompatActivity() {
 
         // Load courses
         loadCourses()
+        
+        Log.d("LecturerDashboard", "Activity created for user ID: $currentUserId")
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_dashboard, menu)
+        return true
+    }
+    
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_logout -> {
+                logout()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+    
+    private fun logout() {
+        // Show confirmation dialog
+        AlertDialog.Builder(this)
+            .setTitle("Logout")
+            .setMessage("Are you sure you want to logout?")
+            .setPositiveButton("Yes") { _, _ ->
+                // Clear user data
+                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                prefs.edit()
+                    .remove("token")
+                    .remove("user_role")
+                    .remove("user_id")
+                    .remove("user_name")
+                    .remove("university_id")
+                    .apply()
+                
+                // Clear adapter state
+                if (::courseAdapter.isInitialized) {
+                    courseAdapter.clearAttendedCourses()
+                }
+                
+                // Return to login screen
+                val intent = Intent(this, LoginActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
+                finish()
+                
+                Log.d("LecturerDashboard", "User $currentUserId logged out successfully")
+            }
+            .setNegativeButton("No", null)
+            .show()
+    }
+
+    private fun setupCourseAdapter() {
+        courseAdapter = CourseAdapter(
+            onCourseClick = { course -> showCourseDetails(course) },
+            onDeleteClick = { course -> showDeleteConfirmationDialog(course) },
+            onGenerateQRClick = { course -> generateQRCode(course) },
+            onShowQRClick = { course -> showStoredQRCode(course) },
+            onEnrollClick = { /* Not used in lecturer view */ },
+            onCheckAttendanceClick = { course -> openAttendanceReport(course) }
+        )
+        courseAdapter.setLecturerView(true)
     }
 
     private fun showQRTimeSelectionDialog(onTimeSelected: (Int) -> Unit) {
@@ -374,6 +446,35 @@ class LecturerDashboardActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun openDeleteConfirmationDialog(courseId: Int) {
+        // Find the course object from the courseId
+        val course = courseAdapter.currentList.find { it.course_id == courseId }
+        if (course != null) {
+            showDeleteConfirmationDialog(course)
+        } else {
+            Toast.makeText(this, "Course not found", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openCourseQRDialog(courseId: Int) {
+        // Find the course object from the courseId
+        val course = courseAdapter.currentList.find { it.course_id == courseId }
+        if (course != null) {
+            generateQRCode(course)
+        } else {
+            Toast.makeText(this, "Course not found", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openAttendanceReport(course: Course) {
+        val intent = Intent(this, AttendanceReportActivity::class.java).apply {
+            putExtra("COURSE_ID", course.course_id)
+            putExtra("COURSE_CODE", course.course_code)
+            putExtra("COURSE_NAME", course.course_name)
+        }
+        startActivity(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         loadCourses() // Reload courses when returning from AddCourseActivity
@@ -381,6 +482,15 @@ class LecturerDashboardActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        
+        // Cancel any active countdowns
         countdownTimer?.cancel()
+        
+        // Clear the adapter state to avoid issues if another user logs in
+        if (::courseAdapter.isInitialized) {
+            courseAdapter.clearAttendedCourses()
+        }
+        
+        Log.d("LecturerDashboard", "Activity destroyed, cleared adapter state")
     }
 } 

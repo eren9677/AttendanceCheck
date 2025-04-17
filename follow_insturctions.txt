@@ -1,0 +1,86 @@
+Task 1: UI - Add "Check Attendance" Button
+
+Task ID: ATTEND-001
+Title: Add "Check Attendance" Button to Lecture Card Layout
+Description: Modify the lecture_card_item.xml layout file. Add a Button widget positioned in the top-right corner. Set its text to "Check Attendance" and assign a unique ID (e.g., button_check_attendance). Ensure proper constraints or positioning within its parent layout (e.g., ConstraintLayout, RelativeLayout).
+Acceptance Criteria:
+A button with the text "Check Attendance" is visible in the top-right corner of each lecture card displayed in the RecyclerView.
+The button has the ID button_check_attendance.
+The button does not overlap significantly with other card elements.
+Dependencies: None
+Task 2: Adapter - Implement Button Click Listener
+
+Task ID: ATTEND-002
+Title: Set Up Click Listener for "Check Attendance" Button in Adapter
+Description: In the LecturesAdapter's onBindViewHolder method, find the button_check_attendance by its ID. Set an OnClickListener for this button. Inside the listener, retrieve the unique identifier (e.g., lectureId) for the specific lecture corresponding to the current card position. This lectureId will be needed to fetch the correct attendance data. Consider passing the click event (along with the lectureId) back to the Activity/Fragment, potentially via an interface callback or ViewModel interaction.
+Acceptance Criteria:
+Clicking the "Check Attendance" button on a lecture card triggers the defined listener.
+The listener correctly identifies and accesses the lectureId for the clicked lecture card.
+The click event is propagated to the appropriate handler (Activity/Fragment/ViewModel).
+Dependencies: ATTEND-001
+Task 3: Data Logic - Fetch Attendance Data
+
+Task ID: ATTEND-003
+Title: Implement Logic to Fetch Enrolled Students and Attendance Records
+Description: Create or modify a method (e.g., in your ViewModel or Repository) that accepts a lectureId as input. This method should perform the following:
+Fetch the list of all Student objects (containing at least studentId and studentName) enrolled in the given lectureId.
+Fetch all distinct dates for which any attendance record exists for this lectureId. Sort these dates chronologically.
+Fetch all individual attendance records (e.g., AttendanceRecord objects containing studentId, lectureId, attendanceDate) for the given lectureId. It's efficient to fetch these all at once if possible.
+Return these three pieces of data (enrolled students list, distinct dates list, all attendance records list) for further processing.
+Acceptance Criteria:
+A function exists that takes lectureId.
+The function correctly retrieves all students enrolled in the lecture.
+The function correctly retrieves all unique dates associated with attendance for that lecture, sorted chronologically.
+The function correctly retrieves all relevant attendance records.
+The function returns the required data sets.
+Dependencies: None (Assumes underlying data models and database access exist)
+Task 4: Data Processing - Structure Attendance Report
+
+Task ID: ATTEND-004
+Title: Process Fetched Data into CSV-like Structure
+Description: Create a function that takes the output from Task ATTEND-003 (enrolled students, distinct dates, attendance records) as input. It should generate a data structure (e.g., a List<Map<String, String>>, a List<List<String>>, or a custom Report object) representing the attendance table:
+Define the columns: "Student ID", "Student Name", followed by each distinct date (formatted as needed, e.g., "YYYY-MM-DD").
+Iterate through each enrolled student.
+For each student, create a row.
+Populate the "Student ID" and "Student Name" columns.
+Iterate through the sorted list of distinct dates. For each date:
+Check if an attendance record exists for the current student on that specific date within the fetched attendance records list.
+If yes, add "+" to the column corresponding to that date.
+If no, add "-" to the column corresponding to that date.
+Return the structured data.
+Acceptance Criteria:
+A function exists that takes the student list, date list, and attendance records.
+The function returns a data structure representing the report.
+The structure includes columns for Student ID, Student Name, and all relevant dates.
+Attendance is correctly marked with "+" for present and "-" for absent/not recorded for all enrolled students on all relevant dates.
+Dates appear as columns in chronological order.
+Dependencies: ATTEND-003
+Task 5: UI - Display Attendance Report
+
+Task ID: ATTEND-005
+Title: Display the Generated Attendance Report to the User
+Description: Triggered by the button click handler (from Task ATTEND-002, likely via ViewModel). Use the structured data generated in Task ATTEND-004. Display this data to the user. Options include:
+Simple Dialog: Show the data in a AlertDialog with a TextView (format the data structure into a readable string).
+Custom Dialog/Fragment: Create a custom dialog or bottom sheet with a RecyclerView or TableLayout for a cleaner, scrollable presentation.
+(Future/Optional): Generate an actual CSV file and provide options to share or save it. (For this prompt, let's focus on in-app display first).
+Acceptance Criteria:
+When the "Check Attendance" button is clicked, the processed attendance data is displayed to the user.
+The display clearly shows Student ID, Student Name, and attendance status (+/-) for each relevant date column.
+The display is readable and handles potential scrolling if the data is large.
+Dependencies: ATTEND-002, ATTEND-004
+Task 6: Integration - Connect Components
+
+Task ID: ATTEND-006
+Title: Integrate Button Click, Data Fetching, Processing, and Display
+Description: Connect the components developed in the previous tasks. Ensure that:
+The button click listener in the Adapter correctly calls the appropriate method in the ViewModel (or Activity/Fragment).
+The ViewModel/Activity/Fragment calls the data fetching logic (Task ATTEND-003) with the correct lectureId.
+The fetched data is passed to the data processing logic (Task ATTEND-004).
+The processed, structured data is then used to trigger the display mechanism (Task ATTEND-005).
+Handle loading states (show a progress indicator while fetching/processing) and potential errors (display an error message if data retrieval fails).
+Acceptance Criteria:
+Clicking the "Check Attendance" button initiates the entire flow from data fetch to display.
+Loading/progress indicators are shown appropriately.
+Error states are handled gracefully.
+The correct data for the specific lecture is displayed.
+Dependencies: ATTEND-002, ATTEND-003, ATTEND-004, ATTEND-005

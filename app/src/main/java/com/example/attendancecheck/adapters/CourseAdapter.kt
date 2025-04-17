@@ -15,7 +15,8 @@ class CourseAdapter(
     private val onDeleteClick: (Course) -> Unit,
     private val onGenerateQRClick: (Course) -> Unit,
     private val onShowQRClick: (Course) -> Unit,
-    private val onEnrollClick: (Course) -> Unit
+    private val onEnrollClick: (Course) -> Unit,
+    private val onCheckAttendanceClick: (Course) -> Unit
 ) : ListAdapter<Course, CourseAdapter.CourseViewHolder>(CourseDiffCallback()) {
 
     private var isShowingAvailableCourses = true
@@ -126,6 +127,7 @@ class CourseAdapter(
                 }
                 btnDelete.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
                 btnGenerateQR.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
+                btnCheckAttendance.visibility = if (isLecturerView) ViewGroup.VISIBLE else ViewGroup.GONE
                 
                 // Show QR button visibility
                 btnShowQR.visibility = if (isLecturerView && coursesWithShowQRButton.contains(course.course_id)) {
@@ -139,6 +141,7 @@ class CourseAdapter(
                 btnDelete.setOnClickListener { onDeleteClick(course) }
                 btnGenerateQR.setOnClickListener { onGenerateQRClick(course) }
                 btnShowQR.setOnClickListener { onShowQRClick(course) }
+                btnCheckAttendance.setOnClickListener { onCheckAttendanceClick(course) }
 
                 // Check if the course has been attended
                 val isAttended = attendedCourses.contains(course.course_id)

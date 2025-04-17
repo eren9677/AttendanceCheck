@@ -2,6 +2,7 @@ package com.example.attendancecheck
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -60,7 +61,13 @@ class LoginActivity : AppCompatActivity() {
                         sharedPrefs.edit()
                             .putString("token", loginResponse.token)
                             .putString("user_role", loginResponse.user.role)
+                            .putInt("user_id", loginResponse.user.user_id)
+                            .putString("user_name", loginResponse.user.name)
+                            .putString("university_id", loginResponse.user.university_id)
                             .apply()
+
+                        // Log successful login for debugging
+                        Log.d("LoginActivity", "User logged in: ID=${loginResponse.user.user_id}, Role=${loginResponse.user.role}")
 
                         // Navigate to appropriate dashboard based on role
                         val intent = when (loginResponse.user.role) {
